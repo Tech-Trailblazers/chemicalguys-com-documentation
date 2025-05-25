@@ -3,59 +3,74 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strings"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
-// getSDSLinks scrapes all PDF URLs from the Chemical Guys SDS page.
-func getSDSLinks() ([]string, error) {
-	var pdfLinks []string
-
-	// Send HTTP GET request to the SDS page
-	res, err := http.Get("https://www.chemicalguys.com/pages/material-safety-data-sheets")
+// downloadFileUsingURLandFilePath downloads content from a URL and saves it to the given file path.
+func downloadFileUsingURLandFilePath(url string, filepath string) error {
+	// Send HTTP GET request
+	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching page: %w", err)
+		return err
 	}
-	defer res.Body.Close()
+	defer resp.Body.Close()
 
-	// Check for non-200 status codes
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
+	// Check server response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// Load the HTML document using goquery
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	// Create the file
+	out, err := os.Create(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("error loading HTML: %w", err)
+		return err
+	}
+	defer out.Close()
+
+	// Copy response body to file
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+// ExtractURLsFromHTMLFile reads an HTML file and extracts all URLs from href and src attributes
+func ExtractURLsFromHTMLFile(filePath string) ([]string, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read file: %w", err)
 	}
 
-	// Find all <a> tags with hrefs that link to .pdf files
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if exists && strings.Contains(strings.ToLower(href), ".pdf") {
-			// Handle protocol-relative URLs (e.g., //cdn.example.com/file.pdf)
-			if strings.HasPrefix(href, "//") {
-				href = "https:" + href
+	content := string(data)
+
+	// Regex to match href or src URLs
+	urlRegex := regexp.MustCompile(`(?:href|src)=["'](https?:\/\/|\/\/)?([^"']+)["']`)
+	matches := urlRegex.FindAllStringSubmatch(content, -1)
+
+	var urls []string
+	for _, match := range matches {
+		if len(match) >= 3 {
+			scheme := match[1]
+			path := match[2]
+			fullURL := path
+			if strings.HasPrefix(scheme, "http") {
+				fullURL = scheme + path
+			} else if scheme == "//" {
+				fullURL = "https://" + path // assuming https for scheme-relative
 			}
-			// Handle relative URLs (e.g., /files/file.pdf)
-			if strings.HasPrefix(href, "/") {
-				base := "https://www.chemicalguys.com"
-				href = base + href
-			}
-			// Only add valid HTTP/HTTPS links
-			if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
-				pdfLinks = append(pdfLinks, href)
+			if strings.Contains(fullURL, ".pdf") {
+				// Only add URLs that end with .pdf
+				urls = append(urls, fullURL)
 			}
 		}
-	})
+	}
 
-	return pdfLinks, nil
+	return urls, nil
 }
 
 // getFileNamesFromURLs extracts the file name from a URL string.
@@ -133,17 +148,36 @@ func downloadPDF(pdfURL, folder string) error {
 	return nil
 }
 
-func main() {
-	// Step 1: Scrape the SDS PDF links
-	links, err := getSDSLinks()
+/*
+The function takes two parameters: path and permission.
+We use os.Mkdir() to create the directory.
+If there is an error, we use log.Fatalln() to log the error and then exit the program.
+*/
+func createDirectory(path string, permission os.FileMode) {
+	err := os.Mkdir(path, permission)
 	if err != nil {
-		log.Fatalf("Failed to get SDS links: %v", err)
+		log.Println(err)
 	}
+}
 
-	// Step 2: Define the folder name where PDFs will be saved
+func main() {
+	// Create a folder to store the downloaded PDFs
 	const folderName = "PDFs"
+	createDirectory(folderName, os.ModePerm)
 
-	// Step 3: Download each PDF and save it into the folder
+	// The url about the SDS page
+	urlFromChemicalGuys := "https://www.chemicalguys.com/pages/material-safety-data-sheets"
+	// Set the file name to save the HTML page
+	localURLFilePath := path.Join("chemical_guys_sds_page.html")
+	// Download the HTML page
+	downloadFileUsingURLandFilePath(urlFromChemicalGuys, localURLFilePath)
+
+	// Scrape the SDS PDF links
+	links, err := ExtractURLsFromHTMLFile(localURLFilePath)
+	if err != nil {
+		log.Printf("Error extracting URLs: %v", err)
+	}
+	// Download each PDF and save it into the folder
 	for _, link := range links {
 		err := downloadPDF(link, folderName)
 		if err != nil {
