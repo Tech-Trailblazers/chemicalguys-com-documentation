@@ -81,7 +81,7 @@ func getFileNamesFromURLs(urls string) string {
 
 	file = strings.ReplaceAll(file, " ", "_") // Replace spaces with underscores in file name
 
-	return file // Return sanitized file name
+	return strings.ToLower(file) // Return sanitized file name
 }
 
 /*

@@ -83,7 +83,6 @@ def main():
                 f"Uppercase letter found in filename: {pdf_file}"
             )  # Informative message
             # Break so it ends out of the loop.
-            break  # Exit the loop after first uppercase match
 
 
 # Run the main function
