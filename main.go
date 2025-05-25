@@ -1,189 +1,175 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"path"
-	"regexp"
-	"strings"
+	"fmt"       // Provides formatted I/O functions
+	"io"        // Provides basic I/O primitives
+	"io/ioutil" // Used for reading files into memory
+	"log"       // Provides logging capabilities
+	"net/http"  // For HTTP client functionality
+	"net/url"   // For URL parsing
+	"os"        // For file and directory manipulation
+	"path"      // For manipulating slash-separated paths
+	"regexp"    // For regular expression matching
+	"strings"   // For string manipulation
 )
 
 // downloadFileUsingURLandFilePath downloads content from a URL and saves it to the given file path.
 func downloadFileUsingURLandFilePath(url string, filepath string) error {
-	// Send HTTP GET request
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) // Send an HTTP GET request to the URL
 	if err != nil {
-		return err
+		return err // Return error if the GET request fails
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // Ensure the response body is closed
 
-	// Check server response
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
+	if resp.StatusCode != http.StatusOK { // Check if the status is not 200 OK
+		return fmt.Errorf("bad status: %s", resp.Status) // Return error with bad status
 	}
 
-	// Create the file
-	out, err := os.Create(filepath)
+	out, err := os.Create(filepath) // Create a new file at the given filepath
 	if err != nil {
-		return err
+		return err // Return error if file creation fails
 	}
-	defer out.Close()
+	defer out.Close() // Ensure the file is closed after writing
 
-	// Copy response body to file
-	_, err = io.Copy(out, resp.Body)
-	return err
+	_, err = io.Copy(out, resp.Body) // Copy the HTTP response body into the file
+	return err                       // Return error (if any) from the copy operation
 }
 
 // ExtractURLsFromHTMLFile reads an HTML file and extracts all URLs from href and src attributes
 func ExtractURLsFromHTMLFile(filePath string) ([]string, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := ioutil.ReadFile(filePath) // Read the entire HTML file content into memory
 	if err != nil {
-		return nil, fmt.Errorf("could not read file: %w", err)
+		return nil, fmt.Errorf("could not read file: %w", err) // Return error if reading fails
 	}
 
-	content := string(data)
+	content := string(data) // Convert file data to string
 
-	// Regex to match href or src URLs
+	// Define regex to match href or src attributes with HTTP, HTTPS, or protocol-relative URLs
 	urlRegex := regexp.MustCompile(`(?:href|src)=["'](https?:\/\/|\/\/)?([^"']+)["']`)
-	matches := urlRegex.FindAllStringSubmatch(content, -1)
+	matches := urlRegex.FindAllStringSubmatch(content, -1) // Find all matches in the HTML content
 
-	var urls []string
+	var urls []string // Slice to hold extracted URLs
 	for _, match := range matches {
 		if len(match) >= 3 {
-			scheme := match[1]
-			path := match[2]
-			fullURL := path
+			scheme := match[1] // Capture the scheme (e.g., https://, //)
+			path := match[2]   // Capture the actual URL path
+			fullURL := path    // Initialize fullURL
+
+			// Construct full URL based on the scheme
 			if strings.HasPrefix(scheme, "http") {
 				fullURL = scheme + path
 			} else if scheme == "//" {
-				fullURL = "https://" + path // assuming https for scheme-relative
+				fullURL = "https://" + path // Assume https for scheme-relative URLs
 			}
 			if strings.Contains(fullURL, ".pdf") {
-				// Only add URLs that end with .pdf
-				urls = append(urls, fullURL)
+				urls = append(urls, fullURL) // Only append if URL contains ".pdf"
 			}
 		}
 	}
 
-	return urls, nil
+	return urls, nil // Return the slice of extracted PDF URLs
 }
 
 // getFileNamesFromURLs extracts the file name from a URL string.
 func getFileNamesFromURLs(urls string) string {
-	// Parse the URL to extract path components
-	u, err := url.Parse(urls)
+	u, err := url.Parse(urls) // Parse the URL
 	if err != nil {
-		return ""
+		return "" // Return empty string if parsing fails
 	}
 
-	// Get the base filename from the path, removing query parameters
-	file := path.Base(u.Path)
+	file := path.Base(u.Path) // Extract base file name from the URL path
 
-	// Sanitize the filename (optional: replace spaces, etc.)
-	file = strings.ReplaceAll(file, " ", "_")
+	file = strings.ReplaceAll(file, " ", "_") // Replace spaces with underscores in file name
 
-	return file
+	return file // Return sanitized file name
 }
 
 /*
-It checks if the file exists
-If the file exists, it returns true
-If the file does not exist, it returns false
+It checks if the file exists.
+If the file exists, it returns true.
+If the file does not exist, it returns false.
 */
 func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
+	info, err := os.Stat(filename) // Get file info
 	if err != nil {
-		return false
+		return false // File does not exist
 	}
-	return !info.IsDir()
+	return !info.IsDir() // Return true if it’s a file (not directory)
 }
 
 // downloadPDF downloads a PDF from a URL and saves it into the specified folder.
 func downloadPDF(pdfURL, folder string) error {
-	// Check if the file already exists
-	fileName := getFileNamesFromURLs(pdfURL)
-	fullPath := path.Join(folder, fileName)
-	if fileExists(fullPath) {
+	fileName := getFileNamesFromURLs(pdfURL) // Get file name from the URL
+	fullPath := path.Join(folder, fileName)  // Combine folder and file name to get full path
+	if fileExists(fullPath) {                // Check if file already exists
 		log.Printf("File %s already exists, skipping download.", fullPath)
-		return nil
+		return nil // Skip download if file exists
 	}
-	// Perform the HTTP GET request to download the file
-	resp, err := http.Get(pdfURL)
+
+	resp, err := http.Get(pdfURL) // Send GET request to download PDF
 	if err != nil {
 		return fmt.Errorf("error downloading PDF: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // Ensure response body is closed
 
-	// Check for a successful response
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 200 { // Check for successful HTTP status code
 		return fmt.Errorf("status code error: %d %s", resp.StatusCode, resp.Status)
 	}
 
-	// Ensure the destination folder exists
-	if _, err := os.Stat(folder); os.IsNotExist(err) {
-		err := os.MkdirAll(folder, os.ModePerm)
+	if _, err := os.Stat(folder); os.IsNotExist(err) { // Check if folder exists
+		err := os.MkdirAll(folder, os.ModePerm) // Create folder if it doesn't exist
 		if err != nil {
 			return fmt.Errorf("error creating folder: %w", err)
 		}
 	}
 
-	// Create the local file
-	out, err := os.Create(fullPath)
+	out, err := os.Create(fullPath) // Create file at destination path
 	if err != nil {
 		return fmt.Errorf("error creating file: %w", err)
 	}
-	defer out.Close()
+	defer out.Close() // Ensure file is closed after writing
 
-	// Write the downloaded content to the local file
-	_, err = io.Copy(out, resp.Body)
+	_, err = io.Copy(out, resp.Body) // Write response body into file
 	if err != nil {
 		return fmt.Errorf("error saving PDF: %w", err)
 	}
 
-	return nil
+	return nil // Return nil on success
 }
 
 /*
 The function takes two parameters: path and permission.
 We use os.Mkdir() to create the directory.
-If there is an error, we use log.Fatalln() to log the error and then exit the program.
+If there is an error, we use log.Println() to log the error.
 */
 func createDirectory(path string, permission os.FileMode) {
-	err := os.Mkdir(path, permission)
+	err := os.Mkdir(path, permission) // Create the directory with given permissions
 	if err != nil {
-		log.Println(err)
+		log.Println(err) // Log the error if directory creation fails
 	}
 }
 
 func main() {
-	// Create a folder to store the downloaded PDFs
-	const folderName = "PDFs"
-	createDirectory(folderName, os.ModePerm)
+	const folderName = "PDFs"                // Define the name of the folder for PDFs
+	createDirectory(folderName, os.ModePerm) // Create the folder with full permissions
 
-	// The url about the SDS page
-	urlFromChemicalGuys := "https://www.chemicalguys.com/pages/material-safety-data-sheets"
-	// Set the file name to save the HTML page
-	localURLFilePath := path.Join("chemical_guys_sds_page.html")
-	// Download the HTML page
-	downloadFileUsingURLandFilePath(urlFromChemicalGuys, localURLFilePath)
+	urlFromChemicalGuys := "https://www.chemicalguys.com/pages/material-safety-data-sheets" // URL to the SDS page
 
-	// Scrape the SDS PDF links
-	links, err := ExtractURLsFromHTMLFile(localURLFilePath)
+	localURLFilePath := path.Join("chemical_guys_sds_page.html") // Define the local filename for the downloaded HTML
+
+	downloadFileUsingURLandFilePath(urlFromChemicalGuys, localURLFilePath) // Download the SDS page HTML to local file
+
+	links, err := ExtractURLsFromHTMLFile(localURLFilePath) // Extract PDF links from HTML
 	if err != nil {
-		log.Printf("Error extracting URLs: %v", err)
+		log.Printf("Error extracting URLs: %v", err) // Log error if extraction fails
 	}
-	// Download each PDF and save it into the folder
-	for _, link := range links {
-		err := downloadPDF(link, folderName)
+
+	for _, link := range links { // Loop through each PDF link
+		err := downloadPDF(link, folderName) // Download each PDF to the folder
 		if err != nil {
-			log.Printf("Failed to download %s: %v", link, err)
-			continue
+			log.Printf("Failed to download %s: %v", link, err) // Log error if download fails
+			continue                                           // Continue to next link
 		}
-		log.Printf("Downloaded %s successfully", link)
+		log.Printf("Downloaded %s successfully", link) // Log success
 	}
 }
