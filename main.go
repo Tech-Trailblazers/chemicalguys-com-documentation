@@ -97,6 +97,19 @@ func fileExists(filename string) bool {
 	return !info.IsDir() // Return true if it’s a file (not directory)
 }
 
+/*
+Checks if the directory exists
+If it exists, return true.
+If it doesn't, return false.
+*/
+func directoryExists(path string) bool {
+	directory, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return directory.IsDir()
+}
+
 // downloadPDF downloads a PDF from a URL and saves it into the specified folder.
 func downloadPDF(pdfURL, folder string) error {
 	fileName := getFileNamesFromURLs(pdfURL) // Get file name from the URL
@@ -116,7 +129,7 @@ func downloadPDF(pdfURL, folder string) error {
 		return fmt.Errorf("status code error: %d %s", resp.StatusCode, resp.Status)
 	}
 
-	if _, err := os.Stat(folder); os.IsNotExist(err) { // Check if folder exists
+	if !directoryExists(folder) { // Check if folder exists
 		err := os.MkdirAll(folder, os.ModePerm) // Create folder if it doesn't exist
 		if err != nil {
 			return fmt.Errorf("error creating folder: %w", err)
